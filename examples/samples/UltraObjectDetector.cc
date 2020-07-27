@@ -45,8 +45,8 @@ int UltraObjectDetector::Detect(std::shared_ptr<TNN_NS::Mat> image_mat, int imag
         }
         // step 3. get output mat
         TNN_NS::MatConvertParam output_cvt_param;
-        std::shared_ptr<TNN_NS::Mat> output_mat_res = nullptr;
-        status = instance_->GetOutputMat(output_mat_res, output_cvt_param, "082_convolutional");
+        std::shared_ptr<TNN_NS::Mat> output_mat_fm1 = nullptr;
+        status = instance_->GetOutputMat(output_mat_fm1, output_cvt_param, "082_convolutional");
         if (status != TNN_NS::TNN_OK) {
             LOGE("GetOutputMat Error: %s\n", status.description().c_str());
             return status;
@@ -60,49 +60,21 @@ int UltraObjectDetector::Detect(std::shared_ptr<TNN_NS::Mat> image_mat, int imag
 
         std::vector<ObjectInfo> bbox_collection;
         object_list.clear();
-        ObjectInfo temp;
-        temp.score = 0;
-        temp.x1 = 0;
-        temp.x2 = 0;
-        temp.y1 = 0;
-        temp.y2 = 0;
-        object_list.push_back(temp);
+        std::vector<float> anchors_ = {};
+        anchors_.push_back(116);
+        anchors_.push_back(90);
+        anchors_.push_back(156);
+        anchors_.push_back(198);
+        anchors_.push_back(373);
+        anchors_.push_back(326);
+        GetBBox(*(output_mat_fm1.get()), 169, anchors_, in_w, in_h, conf_threshold, bbox_collection);
+        donms(bbox_collection, object_list, nms_threshold);
         // GenerateBBox(bbox_collection, *(output_mat_res.get()), conf_threshold, nms_threshold);
 #if TNN_SDK_ENABLE_BENCHMARK
     }
 #endif
     // Detection done
     return 0;
-}
-
-/*
- * Generating bbox from output blobs
- */
-void UltraObjectDetector::GenerateBBox(std::vector<ObjectInfo> &bbox_collection, TNN_NS::Mat &res, float conf_threshold, float nms_threshold) {
-    float *detect_res = (float *)res.GetData();
-    std::vector<std::vector<float>> reshaped_res = {};
-    std::vector<float> temp_line = {};
-    for (int i = 0; i < 10647; i++) {
-        for (int j = 0; j < 85; j++) {
-            temp_line.push_back(detect_res[85 * i + j]);
-        }
-        reshaped_res.push_back(temp_line);
-    }
-    // converted_res = xywh2xyxy(reshaped_res);
-    for (int i = 0; i < 4; i++) {
-        ObjectInfo temp_info;
-        temp_info.x1 = reshaped_res[i][0];
-        temp_info.x2 = reshaped_res[i][1];
-        temp_info.y1 = reshaped_res[i][2];
-        temp_info.y2 = reshaped_res[i][3];
-        temp_info.score = reshaped_res[i][4];
-        bbox_collection.push_back(temp_info);
-    }
-}
-
-void UltraObjectDetector::GetBoxes(TNN_NS::Mat &feature_map, std::vector<ObjectInfo> &output, int input_width, int input_height, float conf_threshold_, float nms_threshold_)
-{
-    // 
 }
 
 float UltraObjectDetector::Sigmoid(float x) {
@@ -125,21 +97,31 @@ int UltraObjectDetector::GetMaxClassScoreIndex(std::vector<float> scores) {
     return index;
 }
 
-void UltraObjectDetector::GetBBox(TNN_NS::Mat &feature_map, int tiles, std::vector<float> anchors, int input_width, int input_height, float conf_threshold_, std::vector<ObjectInfo> &output)
+void UltraObjectDetector::GetBBox(TNN_NS::Mat &feature_map, int tiles, std::vector<float> & anchors, int input_width, int input_height, float conf_threshold_, std::vector<ObjectInfo> &output)
 {
     // feature_map: e.g. float* --> 169*225, where tiles = 169
     float *fm_data = (float *)feature_map.GetData();
     std::vector<std::vector<float>> fm_reshaped = {};
     float tx, ty, tw, th, cf, bx, by, bw, bh, b_conf;
     std::vector<float> cp, b_scores;
-    for (int i = 0; i < tiles; i++) {
+    /*for (int i = 0; i < tiles; i++) {
         std::vector<float> temp = {};
         for (int j = 0; j < 255; j++){
             temp.push_back(fm_data[i*255 + j]);
         }
         fm_reshaped.push_back(temp);   // fm_reshaped: 169 * 255
-    }
+    }*/
+
     int fm_dims = sqrt(tiles);
+    for (int i = 0; i < fm_dims; i++) {
+        for (int j = 0; i < fm_dims; j++) {
+            std::vector<float> temp = {};
+            for (int k = 0; k < 255; k++) {
+                temp.push_back(fm_data[255*i + j + k]);
+            }
+            fm_reshaped.push_back(temp);
+        }
+    }
     for (int i = 0; i < 3; i++)   // anchor has 3 pairs
     {
         for (int cx = 0; cx < fm_dims; cx++){
