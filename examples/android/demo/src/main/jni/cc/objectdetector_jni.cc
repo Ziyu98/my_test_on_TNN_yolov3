@@ -19,7 +19,7 @@ JNIEXPORT JNICALL jint TNN_OBJECT_DETECTOR(init) (JNIEnv *env, jobject thiz, jst
 {
     setBenchResult("");
     std::vector<int> nchw = {1, 3, height, width};
-    gDetector = std::make_shared<UltraObjectDetector>(0.4, 0.4);
+    gDetector = std::make_shared<UltraObjectDetector>(width, height, 0.4, 0.4);
     std::string protoContent, modelContent;
     std::string modelPathStr(jstring2string(env, modelPath));
     protoContent = fdLoadFile(modelPathStr + "/yolov3.opt.tnnproto");
